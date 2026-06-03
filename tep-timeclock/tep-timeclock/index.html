@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TEP Distribution · Time Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #050912;
+    --surface: #0d1424;
+    --surface-2: #111a2e;
+    --ink: #e6f4ff;
+    --ink-2: #94aac4;
+    --ink-3: #5d7493;
+    --line: #1c2740;
+    --line-2: #2a3a5a;
+    --accent: #00d4ff;
+    --accent-2: #4ae3ff;
+    --accent-dim: rgba(0,212,255,.15);
+    --warn: #ffb547;
+    --danger: #ff5566;
+    --ok: #00d4ff;
+    --glow: 0 0 12px rgba(0,212,255,.5), 0 0 24px rgba(0,212,255,.25);
+    --glow-soft: 0 0 8px rgba(0,212,255,.3);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.5);
+  }
+  body { background: radial-gradient(ellipse at top, #0a1428 0%, #050912 60%); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: 'Inter', sans-serif; font-size: 15px; min-height: 100vh; }
+  .app { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  
+  /* Header */
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 0 24px; border-bottom: 1px solid var(--line); margin-bottom: 32px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark { width: 52px; height: 52px; border-radius: 8px; background: transparent; border: 2px solid var(--accent); display: grid; place-items: center; color: var(--accent); font-weight: 700; font-family: 'JetBrains Mono'; font-size: 14px; letter-spacing: 0.05em; box-shadow: var(--glow), inset 0 0 12px rgba(0,212,255,.15); text-shadow: 0 0 8px rgba(0,212,255,.8); position: relative; line-height: 1; padding-top: 2px; }
+  .brand-mark .mark-top { font-size: 14px; }
+  .brand-mark .mark-bot { font-size: 10px; letter-spacing: 0.1em; opacity: .85; margin-top: 1px; }
+  .brand h1 { font-family: 'Fraunces'; font-weight: 500; font-size: 22px; letter-spacing: -0.01em; color: var(--ink); }
+  .brand .sub { font-size: 11px; color: var(--accent); letter-spacing: 0.18em; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 500; text-shadow: var(--glow-soft); }
+  .storage-badge { margin-left: 8px; padding: 2px 6px; border-radius: 3px; font-size: 9px; border: 1px solid currentColor; opacity: 0.7; letter-spacing: 0.1em; }
+  .clock-now { font-family: 'JetBrains Mono'; font-size: 13px; color: var(--ink-3); text-align: right; }
+  .clock-now .time { font-size: 24px; color: var(--accent); font-weight: 500; letter-spacing: 0.04em; text-shadow: var(--glow-soft); }
+  
+  /* Nav */
+  .nav { display: flex; gap: 4px; margin-bottom: 28px; background: var(--surface); padding: 4px; border-radius: 10px; width: fit-content; border: 1px solid var(--line); }
+  .nav button { background: none; border: none; padding: 8px 18px; border-radius: 7px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); transition: all .15s; text-transform: uppercase; letter-spacing: 0.08em; }
+  .nav button.active { background: var(--accent); color: #050912; box-shadow: var(--glow-soft); }
+  .nav button:hover:not(.active) { background: var(--surface-2); color: var(--accent); }
+  
+  /* Cards */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; box-shadow: var(--shadow); }
+  .card + .card { margin-top: 20px; }
+  .card-title { font-family: 'Fraunces'; font-weight: 500; font-size: 20px; letter-spacing: -0.01em; margin-bottom: 4px; color: var(--ink); }
+  .card-sub { color: var(--ink-3); font-size: 13px; margin-bottom: 20px; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .card-head .card-title { margin-bottom: 0; }
+  
+  /* Employee Grid (clock-in view) */
+  .emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .emp-tile { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 20px; cursor: pointer; transition: all .2s; text-align: left; font-family: inherit; }
+  .emp-tile:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--glow-soft); }
+  .emp-tile .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--bg); border: 1.5px solid var(--accent); display: grid; place-items: center; font-weight: 600; color: var(--accent); margin-bottom: 12px; font-size: 15px; font-family: 'JetBrains Mono'; text-shadow: var(--glow-soft); }
+  .emp-tile .name { font-weight: 600; font-size: 15px; color: var(--ink); }
+  .emp-tile .role { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  .emp-tile .status { font-family: 'JetBrains Mono'; font-size: 10px; margin-top: 12px; padding: 4px 8px; border-radius: 4px; display: inline-block; letter-spacing: 0.08em; }
+  .emp-tile .status.in { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,212,255,.3); }
+  .emp-tile .status.out { background: rgba(93,116,147,.1); color: var(--ink-3); border: 1px solid var(--line); }
+  
+  /* PIN modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); backdrop-filter: blur(8px); display: grid; place-items: center; z-index: 100; padding: 20px; }
+  .modal { background: var(--surface); border: 1px solid var(--line-2); border-radius: 14px; padding: 32px; max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.6), 0 0 40px rgba(0,212,255,.08); }
+  .modal h2 { font-family: 'Fraunces'; font-weight: 500; font-size: 24px; margin-bottom: 4px; color: var(--ink); }
+  .modal .sub { color: var(--ink-3); font-size: 14px; margin-bottom: 24px; }
+  .pin-input { width: 100%; padding: 14px 16px; font-family: 'JetBrains Mono'; font-size: 22px; text-align: center; letter-spacing: 0.5em; border: 1.5px solid var(--line); border-radius: 10px; outline: none; transition: all .2s; background: var(--bg); color: var(--accent); text-shadow: var(--glow-soft); }
+  .pin-input:focus { border-color: var(--accent); box-shadow: var(--glow-soft); }
+  .pin-error { color: var(--danger); font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  
+  /* Buttons */
+  .btn { padding: 10px 18px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; letter-spacing: 0.02em; }
+  .btn:hover { background: var(--line); border-color: var(--line-2); }
+  .btn-primary { background: var(--accent); color: #050912; border-color: var(--accent); font-weight: 600; box-shadow: var(--glow-soft); }
+  .btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); box-shadow: var(--glow); }
+  .btn-accent { background: var(--accent); color: #050912; border-color: var(--accent); font-weight: 600; }
+  .btn-accent:hover { background: var(--accent-2); }
+  .btn-danger { background: var(--surface-2); color: var(--danger); border-color: var(--line); }
+  .btn-danger:hover { background: rgba(255,85,102,.1); border-color: var(--danger); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-block { width: 100%; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  
+  /* Clock action screen */
+  .clock-action { text-align: center; padding: 20px 0; }
+  .clock-action .emp-avatar { width: 84px; height: 84px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); display: grid; place-items: center; font-weight: 600; color: var(--accent); font-size: 28px; margin: 0 auto 16px; font-family: 'JetBrains Mono'; box-shadow: var(--glow-soft); text-shadow: var(--glow-soft); }
+  .clock-action .emp-name { font-family: 'Fraunces'; font-size: 28px; font-weight: 500; color: var(--ink); }
+  .clock-action .current-status { margin: 20px 0; padding: 20px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+  .clock-action .current-status .label { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; }
+  .clock-action .current-status .val { font-family: 'JetBrains Mono'; font-size: 24px; margin-top: 4px; font-weight: 500; color: var(--ink); }
+  .clock-action .current-status.in { border-color: var(--accent); box-shadow: inset 0 0 20px rgba(0,212,255,.1); }
+  .clock-action .current-status.in .val { color: var(--accent); text-shadow: var(--glow-soft); }
+  .big-btn { width: 100%; padding: 20px; font-size: 16px; font-weight: 700; border-radius: 12px; border: none; cursor: pointer; font-family: inherit; transition: all .15s; letter-spacing: 0.1em; text-transform: uppercase; }
+  .big-btn.clock-in { background: var(--accent); color: #050912; box-shadow: var(--glow); }
+  .big-btn.clock-in:hover { background: var(--accent-2); }
+  .big-btn.clock-out { background: var(--warn); color: #1a1408; box-shadow: 0 0 12px rgba(255,181,71,.4); }
+  .big-btn.clock-out:hover { background: #ffc870; }
+  
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 12px 14px; font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid var(--line); font-weight: 600; }
+  td { padding: 14px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-2); }
+  td.mono { font-family: 'JetBrains Mono'; font-size: 13px; color: var(--ink-2); }
+  
+  /* Forms */
+  .form-row { display: grid; grid-template-columns: 2fr 1.5fr 1fr 100px; gap: 10px; align-items: end; margin-bottom: 16px; }
+  .form-field label { display: block; font-size: 11px; color: var(--ink-3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+  .form-field input, .form-field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-family: inherit; font-size: 14px; outline: none; background: var(--bg); color: var(--ink); transition: all .15s; }
+  .form-field input:focus, .form-field select:focus { border-color: var(--accent); box-shadow: var(--glow-soft); }
+  .form-field input::placeholder { color: var(--ink-3); }
+  
+  /* Calendar */
+  .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .cal-header .month-label { font-family: 'Fraunces'; font-size: 22px; font-weight: 500; color: var(--ink); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .cal-dayname { background: var(--bg); padding: 10px 8px; text-align: center; font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+  .cal-day { background: var(--surface); min-height: 90px; padding: 8px; cursor: pointer; transition: all .15s; position: relative; }
+  .cal-day:hover { background: var(--surface-2); }
+  .cal-day.other-month { background: var(--bg); opacity: 0.4; }
+  .cal-day.today { background: rgba(0,212,255,.06); border-inset: 0 0 0 2px var(--accent); }
+  .cal-day.today .day-num { color: var(--accent); font-weight: 700; text-shadow: var(--glow-soft); }
+  .cal-day .day-num { font-family: 'JetBrains Mono'; font-size: 13px; color: var(--ink-2); font-weight: 500; }
+  .cal-day .day-hours { position: absolute; bottom: 8px; left: 8px; right: 8px; }
+  .cal-day .hours-pill { font-family: 'JetBrains Mono'; font-size: 10px; background: var(--accent); color: #050912; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 2px; font-weight: 700; box-shadow: var(--glow-soft); letter-spacing: 0.02em; }
+  .cal-day .entry-count { font-size: 10px; color: var(--ink-3); margin-top: 4px; }
+  
+  /* Stats */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; position: relative; overflow: hidden; }
+  .stat::before { content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%; background: var(--accent); box-shadow: var(--glow-soft); }
+  .stat .label { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; margin-bottom: 8px; }
+  .stat .value { font-family: 'JetBrains Mono'; font-size: 30px; font-weight: 500; letter-spacing: -0.01em; color: var(--accent); text-shadow: var(--glow-soft); }
+  .stat .value.mono { font-family: 'JetBrains Mono'; }
+  .stat .delta { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  
+  /* Misc */
+  .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; }
+  .badge-in { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,212,255,.3); text-shadow: var(--glow-soft); }
+  .badge-out { background: rgba(93,116,147,.1); color: var(--ink-3); border: 1px solid var(--line); }
+  .badge-edited { background: rgba(255,181,71,.1); color: var(--warn); border: 1px solid rgba(255,181,71,.3); }
+  .empty { padding: 40px 20px; text-align: center; color: var(--ink-3); font-size: 14px; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .grow { flex: 1; }
+  .loading { padding: 60px; text-align: center; color: var(--ink-3); }
+  .hidden { display: none !important; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--accent); color: var(--accent); padding: 12px 22px; border-radius: 8px; font-size: 14px; z-index: 200; box-shadow: var(--glow); text-shadow: var(--glow-soft); animation: toastIn .25s ease-out; font-weight: 500; }
+  @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  
+  /* Select restyle */
+  select { color: var(--ink); }
+  select option { background: var(--surface); color: var(--ink); }
+  
+  @media (max-width: 640px) {
+    .form-row { grid-template-columns: 1fr; }
+    .cal-day { min-height: 70px; }
+    .cal-day .day-hours { position: static; margin-top: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <div class="mark-top">TEP</div>
+        <div class="mark-bot">分布</div>
+      </div>
+      <div>
+        <h1 id="company-name">TEP Distribution</h1>
+        <div class="sub">Workforce · Time Tracking <span id="storage-badge" class="storage-badge"></span></div>
+      </div>
+    </div>
+    <div class="clock-now">
+      <div class="time" id="live-time">--:--:--</div>
+      <div id="live-date" style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;"></div>
+    </div>
+  </div>
+
+  <div class="nav">
+    <button data-view="clock" class="active">Clock In/Out</button>
+    <button data-view="admin">Admin</button>
+  </div>
+
+  <div id="view-loading" class="loading">Loading...</div>
+
+  <!-- CLOCK VIEW -->
+  <div id="view-clock" class="hidden">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Who's clocking in?</div>
+          <div class="card-sub">Tap your name to begin</div>
+        </div>
+        <div id="active-count" class="badge badge-in" style="display:none;"></div>
+      </div>
+      <div id="emp-grid" class="emp-grid"></div>
+      <div id="emp-empty" class="empty hidden">No employees yet. Open the Admin tab to add team members.</div>
+    </div>
+  </div>
+
+  <!-- ADMIN VIEW -->
+  <div id="view-admin" class="hidden">
+    <div id="admin-locked" class="card" style="max-width: 460px; margin: 40px auto;">
+      <div class="card-title">Admin Access</div>
+      <div class="card-sub">Enter admin PIN to manage employees and view records</div>
+      <input type="password" id="admin-pin-input" class="pin-input" placeholder="••••" maxlength="8" />
+      <div id="admin-pin-error" class="pin-error"></div>
+      <button id="admin-unlock-btn" class="btn btn-primary btn-block" style="margin-top:16px;">Unlock</button>
+      <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--line); font-size:12px; color:var(--ink-3);">
+        First time? Default admin PIN is <span style="font-family:'JetBrains Mono';color:var(--ink);font-weight:600;">1234</span>. Change it in Settings after unlocking.
+      </div>
+    </div>
+
+    <div id="admin-unlocked" class="hidden">
+      <div class="stats">
+        <div class="stat"><div class="label">Total Employees</div><div class="value mono" id="stat-emp">0</div></div>
+        <div class="stat"><div class="label">Currently Clocked In</div><div class="value mono" id="stat-active">0</div></div>
+        <div class="stat"><div class="label">Hours This Week</div><div class="value mono" id="stat-week">0.0</div></div>
+        <div class="stat"><div class="label">Hours This Month</div><div class="value mono" id="stat-month">0.0</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Employees</div>
+            <div class="card-sub">Add team members who can clock in</div>
+          </div>
+          <div class="row">
+            <button id="admin-refresh-btn" class="btn" title="Pull latest clock-ins from employees">↻ Refresh</button>
+            <button id="add-emp-btn" class="btn btn-primary">+ Add Employee</button>
+          </div>
+        </div>
+        <div id="emp-table-wrap"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title" id="cal-title">Schedule Calendar</div>
+            <div class="card-sub">Click a day to view detailed entries</div>
+          </div>
+          <div class="row">
+            <select id="cal-emp-filter" style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:var(--surface);">
+              <option value="">All employees</option>
+            </select>
+            <button id="cal-prev" class="btn btn-sm">‹</button>
+            <button id="cal-today" class="btn btn-sm">Today</button>
+            <button id="cal-next" class="btn btn-sm">›</button>
+          </div>
+        </div>
+        <div class="cal-header"><div class="month-label" id="month-label"></div></div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Recent Entries</div>
+            <div class="card-sub">Last 50 clock-ins (newest first)</div>
+          </div>
+          <button id="export-csv-btn" class="btn btn-sm">Export CSV</button>
+        </div>
+        <div id="entries-table-wrap"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Settings</div>
+        <div class="card-sub" style="margin-bottom:20px;">Manage admin PIN and company name</div>
+        <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+          <div class="form-field">
+            <label>Company Name</label>
+            <input id="setting-company" type="text" placeholder="TEP Distribution" />
+          </div>
+          <div class="form-field">
+            <label>New Admin PIN (leave blank to keep)</label>
+            <input id="setting-pin" type="password" placeholder="••••" maxlength="8" />
+          </div>
+        </div>
+        <div class="row" style="margin-top: 10px;">
+          <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+          <button id="logout-admin-btn" class="btn">Lock Admin</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal mount -->
+<div id="modal-root"></div>
+
+<script>
+//////////////////// CONFIG ////////////////////
+// ============================================
+//   PASTE YOUR SUPABASE CREDENTIALS HERE
+//   Find them at: https://supabase.com/dashboard/project/_/settings/api
+// ============================================
+const TEP_CONFIG = {
+  SUPABASE_URL: 'YOUR_SUPABASE_URL_HERE',       // e.g. https://abcdxyz.supabase.co
+  SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY_HERE'  // long string starting with eyJ...
+};
+// ============================================
+
+//////////////////// STATE & STORAGE ////////////////////
+const SUPABASE_CONFIGURED = TEP_CONFIG.SUPABASE_URL &&
+  TEP_CONFIG.SUPABASE_URL.startsWith('https://') &&
+  TEP_CONFIG.SUPABASE_ANON_KEY &&
+  TEP_CONFIG.SUPABASE_ANON_KEY.length > 20;
+
+const STORAGE_MODE = SUPABASE_CONFIGURED ? 'cloud'
+  : (typeof window !== 'undefined' && window.storage) ? 'artifact'
+  : 'local';
+
+const STORE = (function() {
+  // 1. Supabase (production multi-device)
+  if (STORAGE_MODE === 'cloud') {
+    const sb = window.supabase.createClient(TEP_CONFIG.SUPABASE_URL, TEP_CONFIG.SUPABASE_ANON_KEY);
+    return {
+      _sb: sb,
+      async get(key) {
+        const { data, error } = await sb.from('tep_kv').select('value').eq('key', key).maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error('Key not found: ' + key);
+        return { key, value: JSON.stringify(data.value), shared: true };
+      },
+      async set(key, value) {
+        try {
+          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+          const { error } = await sb.from('tep_kv').upsert({ key, value: parsed, updated_at: new Date().toISOString() });
+          if (error) { console.error('Supabase set error:', error); return null; }
+          return { key, value, shared: true };
+        } catch(e) { console.error('Supabase set exception:', e); return null; }
+      },
+      async delete(key) {
+        const { error } = await sb.from('tep_kv').delete().eq('key', key);
+        if (error) throw error;
+        return { key, deleted: true, shared: true };
+      },
+      async list(prefix) {
+        const q = sb.from('tep_kv').select('key');
+        const { data, error } = prefix ? await q.like('key', prefix + '%') : await q;
+        if (error) throw error;
+        return { keys: data.map(r => r.key) };
+      }
+    };
+  }
+  // 2. Claude artifact storage
+  if (STORAGE_MODE === 'artifact') return window.storage;
+  // 3. localStorage fallback
+  const LS_PREFIX = 'tep_tc_';
+  return {
+    async get(key) {
+      const v = localStorage.getItem(LS_PREFIX + key);
+      if (v === null) throw new Error('Key not found: ' + key);
+      return { key, value: v, shared: false };
+    },
+    async set(key, value) {
+      try { localStorage.setItem(LS_PREFIX + key, value); return { key, value, shared: false }; }
+      catch(e) { console.error('localStorage set failed:', e); return null; }
+    },
+    async delete(key) { localStorage.removeItem(LS_PREFIX + key); return { key, deleted: true, shared: false }; },
+    async list(prefix) {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(LS_PREFIX)) {
+          const real = k.slice(LS_PREFIX.length);
+          if (!prefix || real.startsWith(prefix)) keys.push(real);
+        }
+      }
+      return { keys };
+    }
+  };
+})();
+console.log('TEP Time Clock storage mode:', STORAGE_MODE);
+const KEY_EMPLOYEES = 'employees';
+const KEY_ENTRIES = 'entries';
+const KEY_SETTINGS = 'settings';
+const SHARED = true;
+
+let state = {
+  employees: [],
+  entries: [],
+  settings: { adminPin: '1234', companyName: 'TEP Distribution' },
+  view: 'clock',
+  adminUnlocked: false,
+  calDate: new Date(),
+  calFilter: '',
+  selectedEmp: null
+};
+
+async function loadAll() {
+  try {
+    const empRes = await STORE.get(KEY_EMPLOYEES, SHARED).catch(() => null);
+    state.employees = empRes?.value ? JSON.parse(empRes.value) : [];
+  } catch (e) { state.employees = []; }
+  try {
+    const entRes = await STORE.get(KEY_ENTRIES, SHARED).catch(() => null);
+    state.entries = entRes?.value ? JSON.parse(entRes.value) : [];
+  } catch (e) { state.entries = []; }
+  try {
+    const setRes = await STORE.get(KEY_SETTINGS, SHARED).catch(() => null);
+    if (setRes?.value) state.settings = { ...state.settings, ...JSON.parse(setRes.value) };
+  } catch (e) {}
+}
+async function saveEmployees() {
+  try {
+    const result = await STORE.set(KEY_EMPLOYEES, JSON.stringify(state.employees), SHARED);
+    if (!result) { console.error('saveEmployees: storage returned null'); return false; }
+    return true;
+  } catch(e) { console.error('saveEmployees error:', e); return false; }
+}
+async function saveEntries() {
+  try {
+    const result = await STORE.set(KEY_ENTRIES, JSON.stringify(state.entries), SHARED);
+    if (!result) { console.error('saveEntries: storage returned null'); return false; }
+    return true;
+  } catch(e) { console.error('saveEntries error:', e); return false; }
+}
+async function saveSettings() {
+  try {
+    const result = await STORE.set(KEY_SETTINGS, JSON.stringify(state.settings), SHARED);
+    if (!result) { console.error('saveSettings: storage returned null'); return false; }
+    return true;
+  } catch(e) { console.error('saveSettings error:', e); return false; }
+}
+
+//////////////////// UTILS ////////////////////
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function initials(name) { return name.split(/\s+/).slice(0,2).map(s=>s[0]||'').join('').toUpperCase(); }
+function fmtTime(ts) { return new Date(ts).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
+function fmtDateTime(ts) { return new Date(ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}); }
+function fmtDateOnly(ts) { return new Date(ts).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'}); }
+function dayKey(d) { const dt = new Date(d); return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+function hoursBetween(a, b) { return (new Date(b) - new Date(a)) / 36e5; }
+function fmtHours(h) { return h.toFixed(2); }
+function startOfWeek(d) { const dt = new Date(d); dt.setHours(0,0,0,0); dt.setDate(dt.getDate() - dt.getDay()); return dt; }
+function startOfMonth(d) { const dt = new Date(d); dt.setHours(0,0,0,0); dt.setDate(1); return dt; }
+function toast(msg) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
+}
+
+//////////////////// LIVE CLOCK ////////////////////
+function tickClock() {
+  const now = new Date();
+  document.getElementById('live-time').textContent = now.toLocaleTimeString([], {hour12: true});
+  document.getElementById('live-date').textContent = now.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'});
+}
+setInterval(tickClock, 1000); tickClock();
+
+//////////////////// NAV ////////////////////
+document.querySelectorAll('.nav button').forEach(b => {
+  b.addEventListener('click', () => switchView(b.dataset.view));
+});
+function switchView(v) {
+  state.view = v;
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  document.getElementById('view-clock').classList.toggle('hidden', v !== 'clock');
+  document.getElementById('view-admin').classList.toggle('hidden', v !== 'admin');
+  if (v === 'admin') renderAdmin(); else renderClockView();
+}
+
+//////////////////// CLOCK VIEW ////////////////////
+function isClockedIn(empId) {
+  return state.entries.some(e => e.empId === empId && !e.clockOut);
+}
+function activeEntry(empId) {
+  return state.entries.find(e => e.empId === empId && !e.clockOut);
+}
+
+function renderClockView() {
+  const grid = document.getElementById('emp-grid');
+  const empty = document.getElementById('emp-empty');
+  const activeBadge = document.getElementById('active-count');
+  
+  const activeCount = state.employees.filter(e => e.active !== false && isClockedIn(e.id)).length;
+  if (activeCount > 0) {
+    activeBadge.style.display = 'inline-block';
+    activeBadge.textContent = activeCount + ' active';
+  } else {
+    activeBadge.style.display = 'none';
+  }
+  
+  const visible = state.employees.filter(e => e.active !== false);
+  if (visible.length === 0) {
+    grid.innerHTML = ''; empty.classList.remove('hidden'); return;
+  }
+  empty.classList.add('hidden');
+  grid.innerHTML = visible.map(e => {
+    const inNow = isClockedIn(e.id);
+    return `<button class="emp-tile" data-emp="${e.id}">
+      <div class="avatar">${initials(e.name)}</div>
+      <div class="name">${escapeHtml(e.name)}</div>
+      <div class="role">${escapeHtml(e.role || '\u2014')}</div>
+      <div class="status ${inNow?'in':'out'}">${inNow ? '● CLOCKED IN' : 'CLOCKED OUT'}</div>
+    </button>`;
+  }).join('');
+  grid.querySelectorAll('.emp-tile').forEach(btn => {
+    btn.addEventListener('click', () => promptPinForClock(btn.dataset.emp));
+  });
+}
+
+function promptPinForClock(empId) {
+  const emp = state.employees.find(e => e.id === empId);
+  if (!emp) return;
+  showModal(`
+    <h2>${escapeHtml(emp.name)}</h2>
+    <div class="sub">Enter your 4-digit PIN to continue</div>
+    <input type="password" id="m-pin" class="pin-input" maxlength="6" autofocus />
+    <div id="m-pin-err" class="pin-error"></div>
+    <div class="modal-actions">
+      <button class="btn grow" data-act="cancel">Cancel</button>
+      <button class="btn btn-primary grow" data-act="ok">Continue</button>
+    </div>
+  `, ({act, root}) => {
+    if (act !== 'ok') return true;
+    const v = root.querySelector('#m-pin').value;
+    if (v !== emp.pin) {
+      root.querySelector('#m-pin-err').textContent = 'Incorrect PIN';
+      return false;
+    }
+    closeModal();
+    showClockAction(emp);
+    return false;
+  });
+  setTimeout(() => {
+    const inp = document.getElementById('m-pin');
+    if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') document.querySelector('[data-act="ok"]').click(); });
+  }, 50);
+}
+
+function showClockAction(emp) {
+  const active = activeEntry(emp.id);
+  const inNow = !!active;
+  const body = inNow ? `
+    <div class="clock-action">
+      <div class="emp-avatar">${initials(emp.name)}</div>
+      <div class="emp-name">${escapeHtml(emp.name)}</div>
+      <div class="current-status in">
+        <div class="label">Clocked in at</div>
+        <div class="val">${fmtTime(active.clockIn)}</div>
+        <div style="font-size:12px;color:var(--ink-3);margin-top:4px;font-family:'JetBrains Mono';" id="live-elapsed"></div>
+      </div>
+      <button class="big-btn clock-out" data-act="out">CLOCK OUT</button>
+      <button class="btn btn-block" data-act="cancel" style="margin-top:10px;">Cancel</button>
+    </div>
+  ` : `
+    <div class="clock-action">
+      <div class="emp-avatar">${initials(emp.name)}</div>
+      <div class="emp-name">${escapeHtml(emp.name)}</div>
+      <div class="current-status">
+        <div class="label">Status</div>
+        <div class="val">Clocked Out</div>
+      </div>
+      <button class="big-btn clock-in" data-act="in">CLOCK IN</button>
+      <button class="btn btn-block" data-act="cancel" style="margin-top:10px;">Cancel</button>
+    </div>
+  `;
+  showModal(body, async ({act}) => {
+    if (act === 'cancel') return true;
+    state.saving = true;
+    const snap = JSON.parse(JSON.stringify(state.entries));
+    if (act === 'in') {
+      state.entries.push({ id: uid(), empId: emp.id, clockIn: Date.now(), clockOut: null, note: '' });
+      const ok = await saveEntries();
+      state.saving = false;
+      if (!ok) { state.entries = snap; toast('Clock-in failed — try again'); closeModal(); return false; }
+      toast(`${emp.name} clocked in`);
+    } else if (act === 'out') {
+      const a = activeEntry(emp.id);
+      if (a) {
+        a.clockOut = Date.now();
+        const ok = await saveEntries();
+        state.saving = false;
+        if (!ok) { state.entries = snap; toast('Clock-out failed — try again'); closeModal(); return false; }
+        toast(`${emp.name} clocked out · ${fmtHours(hoursBetween(a.clockIn, a.clockOut))}h`);
+      } else {
+        state.saving = false;
+      }
+    }
+    closeModal(); renderClockView();
+    return false;
+  });
+  if (inNow) {
+    const updateElapsed = () => {
+      const el = document.getElementById('live-elapsed');
+      if (!el) return;
+      const ms = Date.now() - active.clockIn;
+      const h = Math.floor(ms / 3.6e6);
+      const m = Math.floor((ms % 3.6e6) / 6e4);
+      const s = Math.floor((ms % 6e4) / 1e3);
+      el.textContent = `${h}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s elapsed`;
+    };
+    updateElapsed();
+    const iv = setInterval(() => {
+      if (!document.getElementById('live-elapsed')) { clearInterval(iv); return; }
+      updateElapsed();
+    }, 1000);
+  }
+}
+
+//////////////////// ADMIN ////////////////////
+function renderAdmin() {
+  if (!state.adminUnlocked) {
+    document.getElementById('admin-locked').classList.remove('hidden');
+    document.getElementById('admin-unlocked').classList.add('hidden');
+    setTimeout(() => document.getElementById('admin-pin-input')?.focus(), 50);
+    return;
+  }
+  document.getElementById('admin-locked').classList.add('hidden');
+  document.getElementById('admin-unlocked').classList.remove('hidden');
+  renderStats();
+  renderEmpTable();
+  renderCalendar();
+  renderEntriesTable();
+  document.getElementById('setting-company').value = state.settings.companyName || '';
+  document.getElementById('setting-pin').value = '';
+  document.getElementById('company-name').textContent = state.settings.companyName || 'TEP Distribution';
+}
+
+document.getElementById('admin-unlock-btn').addEventListener('click', tryAdminUnlock);
+document.getElementById('admin-pin-input').addEventListener('keydown', e => { if (e.key === 'Enter') tryAdminUnlock(); });
+function tryAdminUnlock() {
+  const v = document.getElementById('admin-pin-input').value;
+  if (v === state.settings.adminPin) {
+    state.adminUnlocked = true;
+    document.getElementById('admin-pin-input').value = '';
+    document.getElementById('admin-pin-error').textContent = '';
+    renderAdmin();
+  } else {
+    document.getElementById('admin-pin-error').textContent = 'Incorrect PIN';
+  }
+}
+
+function renderStats() {
+  document.getElementById('stat-emp').textContent = state.employees.filter(e => e.active !== false).length;
+  document.getElementById('stat-active').textContent = state.employees.filter(e => e.active !== false && isClockedIn(e.id)).length;
+  const weekStart = startOfWeek(new Date()).getTime();
+  const monthStart = startOfMonth(new Date()).getTime();
+  let weekH = 0, monthH = 0;
+  state.entries.forEach(e => {
+    if (!e.clockOut) return;
+    const dur = hoursBetween(e.clockIn, e.clockOut);
+    if (e.clockIn >= weekStart) weekH += dur;
+    if (e.clockIn >= monthStart) monthH += dur;
+  });
+  document.getElementById('stat-week').textContent = fmtHours(weekH);
+  document.getElementById('stat-month').textContent = fmtHours(monthH);
+}
+
+function renderEmpTable() {
+  const wrap = document.getElementById('emp-table-wrap');
+  if (state.employees.length === 0) {
+    wrap.innerHTML = '<div class="empty">No employees yet. Click "Add Employee" to get started.</div>';
+    return;
+  }
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Name</th><th>Role</th><th>PIN</th><th>Status</th><th>Total Hours (mo.)</th><th></th></tr></thead>
+    <tbody>${state.employees.map(e => {
+      const monthStart = startOfMonth(new Date()).getTime();
+      const h = state.entries
+        .filter(x => x.empId === e.id && x.clockOut && x.clockIn >= monthStart)
+        .reduce((s, x) => s + hoursBetween(x.clockIn, x.clockOut), 0);
+      const inNow = isClockedIn(e.id);
+      return `<tr>
+        <td><strong>${escapeHtml(e.name)}</strong></td>
+        <td>${escapeHtml(e.role || '—')}</td>
+        <td class="mono">${'•'.repeat(e.pin.length)}</td>
+        <td>${inNow ? '<span class="badge badge-in">● IN</span>' : '<span class="badge badge-out">OUT</span>'}</td>
+        <td class="mono">${fmtHours(h)}</td>
+        <td style="text-align:right;">
+          <button class="btn btn-sm" data-edit-emp="${e.id}">Edit</button>
+          <button class="btn btn-sm btn-danger" data-del-emp="${e.id}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+  wrap.querySelectorAll('[data-edit-emp]').forEach(b => b.addEventListener('click', () => openEmpEditor(b.dataset.editEmp)));
+  wrap.querySelectorAll('[data-del-emp]').forEach(b => b.addEventListener('click', () => confirmDeleteEmp(b.dataset.delEmp)));
+  
+  // populate filter
+  const filter = document.getElementById('cal-emp-filter');
+  const cur = filter.value;
+  filter.innerHTML = '<option value="">All employees</option>' +
+    state.employees.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+  filter.value = cur;
+}
+
+document.getElementById('add-emp-btn').addEventListener('click', () => openEmpEditor(null));
+document.getElementById('admin-refresh-btn').addEventListener('click', async () => {
+  await loadAll();
+  renderAdmin();
+  toast('Data refreshed');
+});
+
+function openEmpEditor(empId) {
+  const emp = empId ? state.employees.find(e => e.id === empId) : null;
+  showModal(`
+    <h2>${emp ? 'Edit Employee' : 'Add Employee'}</h2>
+    <div class="sub">Employees need a 4-digit PIN to clock in/out</div>
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>Full Name</label>
+      <input id="ee-name" type="text" value="${emp ? escapeHtml(emp.name) : ''}" placeholder="Jane Doe" autofocus />
+    </div>
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>Role / Department</label>
+      <input id="ee-role" type="text" value="${emp ? escapeHtml(emp.role||'') : ''}" placeholder="Fulfillment" />
+    </div>
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>PIN (4 digits)</label>
+      <input id="ee-pin" type="text" value="${emp ? emp.pin : ''}" placeholder="0000" maxlength="6" />
+    </div>
+    <div id="ee-err" class="pin-error"></div>
+    <div class="modal-actions">
+      <button class="btn grow" data-act="cancel">Cancel</button>
+      <button class="btn btn-primary grow" data-act="save">${emp ? 'Save' : 'Add'}</button>
+    </div>
+  `, async ({act, root}) => {
+    if (act === 'cancel') return true;
+    const name = root.querySelector('#ee-name').value.trim();
+    const role = root.querySelector('#ee-role').value.trim();
+    const pin = root.querySelector('#ee-pin').value.trim();
+    const err = root.querySelector('#ee-err');
+    if (!name) { err.textContent = 'Name required'; return false; }
+    if (!/^\d{4,6}$/.test(pin)) { err.textContent = 'PIN must be 4-6 digits'; return false; }
+    
+    // Snapshot for rollback
+    const snapshot = JSON.parse(JSON.stringify(state.employees));
+    if (emp) {
+      emp.name = name; emp.role = role; emp.pin = pin;
+    } else {
+      state.employees.push({ id: uid(), name, role, pin, active: true });
+    }
+    const ok = await saveEmployees();
+    if (!ok) {
+      state.employees = snapshot;
+      err.textContent = 'Save failed — check connection and try again';
+      return false;
+    }
+    renderAdmin();
+    toast(emp ? 'Employee updated' : 'Employee added');
+    closeModal();
+    return false;
+  });
+}
+
+function confirmDeleteEmp(empId) {
+  const emp = state.employees.find(e => e.id === empId);
+  if (!emp) return;
+  showModal(`
+    <h2>Delete ${escapeHtml(emp.name)}?</h2>
+    <div class="sub">This will remove the employee and all of their time entries. This cannot be undone.</div>
+    <div class="modal-actions">
+      <button class="btn grow" data-act="cancel">Cancel</button>
+      <button class="btn btn-danger grow" data-act="del">Delete</button>
+    </div>
+  `, async ({act}) => {
+    if (act === 'cancel') return true;
+    const empSnap = JSON.parse(JSON.stringify(state.employees));
+    const entSnap = JSON.parse(JSON.stringify(state.entries));
+    state.employees = state.employees.filter(e => e.id !== empId);
+    state.entries = state.entries.filter(e => e.empId !== empId);
+    const okE = await saveEmployees();
+    const okT = await saveEntries();
+    if (!okE || !okT) {
+      state.employees = empSnap; state.entries = entSnap;
+      toast('Delete failed — try again');
+      return true;
+    }
+    renderAdmin(); closeModal(); toast('Employee deleted');
+    return false;
+  });
+}
+
+//////////////////// CALENDAR ////////////////////
+document.getElementById('cal-prev').addEventListener('click', () => { state.calDate.setMonth(state.calDate.getMonth()-1); renderCalendar(); });
+document.getElementById('cal-next').addEventListener('click', () => { state.calDate.setMonth(state.calDate.getMonth()+1); renderCalendar(); });
+document.getElementById('cal-today').addEventListener('click', () => { state.calDate = new Date(); renderCalendar(); });
+document.getElementById('cal-emp-filter').addEventListener('change', e => { state.calFilter = e.target.value; renderCalendar(); });
+
+function renderCalendar() {
+  const d = state.calDate;
+  const y = d.getFullYear(), m = d.getMonth();
+  document.getElementById('month-label').textContent = d.toLocaleDateString([], {month:'long', year:'numeric'});
+  
+  const first = new Date(y, m, 1);
+  const startDay = first.getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const daysPrevMonth = new Date(y, m, 0).getDate();
+  
+  const today = dayKey(new Date());
+  const filter = state.calFilter;
+  
+  const byDay = {};
+  state.entries.forEach(e => {
+    if (filter && e.empId !== filter) return;
+    if (!e.clockOut) return;
+    const k = dayKey(e.clockIn);
+    if (!byDay[k]) byDay[k] = { hours: 0, count: 0, entries: [] };
+    byDay[k].hours += hoursBetween(e.clockIn, e.clockOut);
+    byDay[k].count++;
+    byDay[k].entries.push(e);
+  });
+  
+  let html = '';
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(n => html += `<div class="cal-dayname">${n}</div>`);
+  
+  // prev month tail
+  for (let i = startDay - 1; i >= 0; i--) {
+    html += `<div class="cal-day other-month"><div class="day-num">${daysPrevMonth - i}</div></div>`;
+  }
+  // current month
+  for (let day = 1; day <= daysInMonth; day++) {
+    const k = `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const data = byDay[k];
+    const isToday = k === today;
+    html += `<div class="cal-day ${isToday?'today':''}" data-day="${k}">
+      <div class="day-num">${day}</div>
+      ${data ? `<div class="day-hours">
+        <span class="hours-pill">${fmtHours(data.hours)}h</span>
+        <div class="entry-count">${data.count} ${data.count===1?'entry':'entries'}</div>
+      </div>` : ''}
+    </div>`;
+  }
+  // next month head
+  const totalCells = startDay + daysInMonth;
+  const remainder = (7 - (totalCells % 7)) % 7;
+  for (let i = 1; i <= remainder; i++) {
+    html += `<div class="cal-day other-month"><div class="day-num">${i}</div></div>`;
+  }
+  document.getElementById('cal-grid').innerHTML = html;
+  document.querySelectorAll('.cal-day[data-day]').forEach(el => {
+    el.addEventListener('click', () => showDayDetail(el.dataset.day));
+  });
+}
+
+function showDayDetail(dayK) {
+  const filter = state.calFilter;
+  const entries = state.entries.filter(e => dayKey(e.clockIn) === dayK && (!filter || e.empId === filter));
+  const dateObj = new Date(dayK + 'T12:00:00');
+  const dateLabel = dateObj.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  const empName = filter ? state.employees.find(e => e.id === filter)?.name : null;
+  
+  const totalH = entries.filter(e => e.clockOut).reduce((s,e) => s + hoursBetween(e.clockIn, e.clockOut), 0);
+  
+  const body = entries.length === 0 ? `
+    <h2>${dateLabel}</h2>
+    <div class="sub">${empName || 'No entries this day'}</div>
+    <div class="empty" style="padding:30px 0;">No clock-ins for this day${empName?` for ${escapeHtml(empName)}`:''}.</div>
+    <button class="btn btn-block" data-act="cancel">Close</button>
+  ` : `
+    <h2>${dateLabel}</h2>
+    <div class="sub">${empName ? escapeHtml(empName)+' · ' : ''}${entries.length} ${entries.length===1?'entry':'entries'} · ${fmtHours(totalH)}h total</div>
+    <div style="max-height:340px;overflow-y:auto;margin-top:16px;border:1px solid var(--line);border-radius:8px;">
+      <table>
+        <thead><tr><th>Employee</th><th>In</th><th>Out</th><th>Hours</th><th></th></tr></thead>
+        <tbody>${entries.map(e => {
+          const emp = state.employees.find(x => x.id === e.empId);
+          const dur = e.clockOut ? fmtHours(hoursBetween(e.clockIn, e.clockOut)) : '—';
+          return `<tr>
+            <td>${escapeHtml(emp?.name || 'Unknown')}</td>
+            <td class="mono">${fmtTime(e.clockIn)}</td>
+            <td class="mono">${e.clockOut ? fmtTime(e.clockOut) : '<span class="badge badge-in">● IN</span>'}</td>
+            <td class="mono">${dur}</td>
+            <td style="text-align:right;">
+              <button class="btn btn-sm" data-edit-entry="${e.id}">Edit</button>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+    <button class="btn btn-block" data-act="cancel" style="margin-top:14px;">Close</button>
+  `;
+  showModal(body, ({act}) => act === 'cancel');
+  // wire entry edits
+  setTimeout(() => {
+    document.querySelectorAll('[data-edit-entry]').forEach(b => {
+      b.addEventListener('click', () => { closeModal(); openEntryEditor(b.dataset.editEntry); });
+    });
+  }, 50);
+}
+
+function openEntryEditor(entryId) {
+  const entry = state.entries.find(e => e.id === entryId);
+  if (!entry) return;
+  const emp = state.employees.find(x => x.id === entry.empId);
+  const inDt = new Date(entry.clockIn);
+  const outDt = entry.clockOut ? new Date(entry.clockOut) : null;
+  const toLocal = d => d ? new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16) : '';
+  showModal(`
+    <h2>Edit Entry</h2>
+    <div class="sub">${escapeHtml(emp?.name || 'Unknown')}</div>
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>Clock In</label>
+      <input id="ed-in" type="datetime-local" value="${toLocal(inDt)}" />
+    </div>
+    <div class="form-field" style="margin-bottom:14px;">
+      <label>Clock Out (leave blank if still in)</label>
+      <input id="ed-out" type="datetime-local" value="${outDt?toLocal(outDt):''}" />
+    </div>
+    <div id="ed-err" class="pin-error"></div>
+    <div class="modal-actions">
+      <button class="btn" data-act="del" style="color:var(--danger);">Delete Entry</button>
+      <button class="btn grow" data-act="cancel">Cancel</button>
+      <button class="btn btn-primary grow" data-act="save">Save</button>
+    </div>
+  `, async ({act, root}) => {
+    if (act === 'cancel') return true;
+    const entSnap = JSON.parse(JSON.stringify(state.entries));
+    if (act === 'del') {
+      state.entries = state.entries.filter(e => e.id !== entryId);
+      const ok = await saveEntries();
+      if (!ok) { state.entries = entSnap; toast('Delete failed'); return false; }
+      renderAdmin(); closeModal(); toast('Entry deleted');
+      return false;
+    }
+    const inVal = root.querySelector('#ed-in').value;
+    const outVal = root.querySelector('#ed-out').value;
+    if (!inVal) { root.querySelector('#ed-err').textContent = 'Clock in required'; return false; }
+    const inTs = new Date(inVal).getTime();
+    const outTs = outVal ? new Date(outVal).getTime() : null;
+    if (outTs && outTs <= inTs) { root.querySelector('#ed-err').textContent = 'Clock out must be after clock in'; return false; }
+    entry.clockIn = inTs; entry.clockOut = outTs; entry.edited = true;
+    const ok = await saveEntries();
+    if (!ok) { state.entries = entSnap; root.querySelector('#ed-err').textContent = 'Save failed — try again'; return false; }
+    renderAdmin(); closeModal(); toast('Entry updated');
+    return false;
+  });
+}
+
+//////////////////// ENTRIES TABLE ////////////////////
+function renderEntriesTable() {
+  const wrap = document.getElementById('entries-table-wrap');
+  const sorted = [...state.entries].sort((a,b) => b.clockIn - a.clockIn).slice(0, 50);
+  if (sorted.length === 0) {
+    wrap.innerHTML = '<div class="empty">No time entries yet.</div>';
+    return;
+  }
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Employee</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th></th></tr></thead>
+    <tbody>${sorted.map(e => {
+      const emp = state.employees.find(x => x.id === e.empId);
+      const dur = e.clockOut ? fmtHours(hoursBetween(e.clockIn, e.clockOut)) : '—';
+      return `<tr>
+        <td><strong>${escapeHtml(emp?.name || 'Deleted')}</strong>${e.edited?' <span class="badge badge-edited">edited</span>':''}</td>
+        <td>${fmtDateOnly(e.clockIn)}</td>
+        <td class="mono">${fmtTime(e.clockIn)}</td>
+        <td class="mono">${e.clockOut ? fmtTime(e.clockOut) : '<span class="badge badge-in">● IN</span>'}</td>
+        <td class="mono">${dur}</td>
+        <td style="text-align:right;"><button class="btn btn-sm" data-edit-entry-row="${e.id}">Edit</button></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+  wrap.querySelectorAll('[data-edit-entry-row]').forEach(b => b.addEventListener('click', () => openEntryEditor(b.dataset.editEntryRow)));
+}
+
+//////////////////// SETTINGS ////////////////////
+document.getElementById('save-settings-btn').addEventListener('click', async () => {
+  const company = document.getElementById('setting-company').value.trim();
+  const newPin = document.getElementById('setting-pin').value.trim();
+  const snap = JSON.parse(JSON.stringify(state.settings));
+  if (company) state.settings.companyName = company;
+  if (newPin) {
+    if (!/^\d{4,8}$/.test(newPin)) { toast('PIN must be 4-8 digits'); return; }
+    state.settings.adminPin = newPin;
+  }
+  const ok = await saveSettings();
+  if (!ok) { state.settings = snap; toast('Save failed — try again'); return; }
+  document.getElementById('company-name').textContent = state.settings.companyName;
+  document.getElementById('setting-pin').value = '';
+  toast('Settings saved');
+});
+document.getElementById('logout-admin-btn').addEventListener('click', () => {
+  state.adminUnlocked = false; renderAdmin();
+});
+
+//////////////////// EXPORT ////////////////////
+document.getElementById('export-csv-btn').addEventListener('click', () => {
+  const rows = [['Employee','Role','Date','Clock In','Clock Out','Hours','Edited']];
+  state.entries
+    .slice().sort((a,b) => b.clockIn - a.clockIn)
+    .forEach(e => {
+      const emp = state.employees.find(x => x.id === e.empId);
+      rows.push([
+        emp?.name || '(deleted)',
+        emp?.role || '',
+        new Date(e.clockIn).toLocaleDateString(),
+        new Date(e.clockIn).toLocaleString(),
+        e.clockOut ? new Date(e.clockOut).toLocaleString() : '',
+        e.clockOut ? fmtHours(hoursBetween(e.clockIn, e.clockOut)) : '',
+        e.edited ? 'yes' : ''
+      ]);
+    });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `tep-timeclock-${dayKey(new Date())}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('CSV exported');
+});
+
+//////////////////// MODAL ////////////////////
+let modalHandler = null;
+function showModal(html, onAction) {
+  modalHandler = onAction;
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `<div class="modal-overlay"><div class="modal">${html}</div></div>`;
+  const overlay = root.querySelector('.modal-overlay');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  root.querySelectorAll('[data-act]').forEach(b => {
+    b.addEventListener('click', async () => {
+      const result = await modalHandler({ act: b.dataset.act, root: root.querySelector('.modal') });
+      if (result === true) closeModal();
+    });
+  });
+}
+function closeModal() { document.getElementById('modal-root').innerHTML = ''; modalHandler = null; }
+
+//////////////////// HELPERS ////////////////////
+function escapeHtml(s) {
+  return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+//////////////////// BOOT ////////////////////
+(async function init() {
+  await loadAll();
+  document.getElementById('view-loading').classList.add('hidden');
+  document.getElementById('view-clock').classList.remove('hidden');
+  document.getElementById('company-name').textContent = state.settings.companyName || 'TEP Distribution';
+  document.getElementById('storage-badge').textContent =
+    STORAGE_MODE === 'cloud' ? 'CLOUD · LIVE' :
+    STORAGE_MODE === 'artifact' ? 'CLOUD' : 'LOCAL ONLY';
+  renderClockView();
+  // Cross-device sync: 10s in cloud (multi-device), 30s otherwise.
+  const SYNC_MS = STORAGE_MODE === 'cloud' ? 10000 : 30000;
+  setInterval(async () => {
+    if (state.view === 'clock' && !document.querySelector('.modal-overlay') && !state.saving) {
+      await loadAll();
+      renderClockView();
+    }
+  }, SYNC_MS);
+})();
+</script>
+</body>
+</html>
